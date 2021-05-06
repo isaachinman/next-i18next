@@ -2,8 +2,12 @@ import React from 'react'
 import fs from 'fs'
 import { screen, render } from '@testing-library/react'
 import { I18nextProvider } from 'react-i18next'
+import createClient from './createClient'
 
 import { appWithTranslation } from './appWithTranslation'
+import { NextRouter } from 'next/router'
+
+const i18nextConfig = require('../mocks/next-i18next.config') // eslint-disable-line
 
 jest.mock('fs', () => ({
   existsSync: jest.fn(),
@@ -19,15 +23,16 @@ jest.mock('react-i18next', () => ({
   __esmodule: true,
 }))
 
+jest.mock('./createClient', () => jest.fn())
 
 const DummyApp = appWithTranslation(() => (
   <div>Hello world</div>
-))
+), i18nextConfig)
 
-const props = {
+const createProps = (locale = 'en', router: Partial<NextRouter> = {}) => ({
   pageProps: {
     _nextI18Next: {
-      initialLocale: 'en',
+      initialLocale: locale,
       userConfig: {
         i18n: {
           defaultLocale: 'en',
@@ -36,9 +41,15 @@ const props = {
       },
     },
   } as any,
-} as any
+  router: {
+    locale: locale,
+    route: '/',
+    ...router,
+  },
+} as any)
 
-const renderComponent = () =>
+const defaultRenderProps = createProps()
+const renderComponent = (props = defaultRenderProps) =>
   render(
     <DummyApp
       {...props}
@@ -50,6 +61,8 @@ describe('appWithTranslation', () => {
     (fs.existsSync as jest.Mock).mockReturnValue(true);
     (fs.readdirSync as jest.Mock).mockReturnValue([]);
     (I18nextProvider as jest.Mock).mockImplementation(DummyI18nextProvider)
+    const actualCreateClient = jest.requireActual('./createClient');
+    (createClient as jest.Mock).mockImplementation(actualCreateClient)
   })
   afterEach(jest.resetAllMocks)
 
@@ -69,6 +82,7 @@ describe('appWithTranslation', () => {
       },
     } as any)
     const customProps = {
+      ...createProps(),
       pageProps: {
         _nextI18Next: {
           initialLocale: 'en',
@@ -91,6 +105,7 @@ describe('appWithTranslation', () => {
       <div>Hello world</div>
     ))
     const customProps = {
+      ...createProps(),
       pageProps: {
         _nextI18Next: {
           initialLocale: 'en',
@@ -105,6 +120,114 @@ describe('appWithTranslation', () => {
         />
       )
     ).toThrow('appWithTranslation was called without a next-i18next config')
+  })
+
+  it('throws an error if userConfig and configOverride are both missing an i18n property', () => {
+    const DummyAppConfigOverride = appWithTranslation(() => (
+      <div>Hello world</div>
+    ), {} as any)
+    const customProps = {
+      ...createProps(),
+      pageProps: {
+        _nextI18Next: {
+          initialLocale: 'en',
+          userConfig: {},
+        },
+      } as any,
+    } as any
+    expect(
+      () => render(
+        <DummyAppConfigOverride
+          {...customProps}
+        />
+      )
+    ).toThrow('appWithTranslation was called without config.i18n')
+  })
+
+  it('throws an error if userConfig and configOverride are both missing a defaultLocale property', () => {
+    const DummyAppConfigOverride = appWithTranslation(() => (
+      <div>Hello world</div>
+    ), {i18n: {} as any})
+    const customProps = {
+      ...createProps(),
+      pageProps: {
+        _nextI18Next: {
+          initialLocale: 'en',
+          userConfig: {i18n: {}},
+        },
+      } as any,
+    } as any
+    expect(
+      () => render(
+        <DummyAppConfigOverride
+          {...customProps}
+        />
+      )
+    ).toThrow('config.i18n does not include a defaultLocale property')
+  })
+
+  it('should use the initialLocale property if the router locale is undefined', () => {
+    const DummyAppConfigOverride = appWithTranslation(() => (
+      <div>Hello world</div>
+    ))
+    const customProps = {
+      ...createProps(),
+      pageProps: {
+        _nextI18Next: {
+          initialLocale: 'en',
+          userConfig: {i18n: {
+            defaultLocale: 'fr',
+          }},
+        },
+      } as any,
+    } as any
+
+    customProps.router = {
+      ...customProps.router,
+      locale: undefined,
+    }
+
+
+    render(
+      <DummyAppConfigOverride
+        {...customProps}
+      />
+    )
+
+    const [args] = (I18nextProvider as jest.Mock).mock.calls
+    expect(args[0].i18n.language).toEqual('en')
+  })
+
+  it('should use the userConfig defaltLocale property if the router locale is undefined and initialLocale is undefined', () => {
+    const DummyAppConfigOverride = appWithTranslation(() => (
+      <div>Hello world</div>
+    ))
+    const customProps = {
+      ...createProps(),
+
+      pageProps: {
+        _nextI18Next: {
+          initialLocale: undefined,
+          userConfig: {i18n: {
+            defaultLocale: 'fr',
+          }},
+        },
+      } as any,
+    } as any
+
+    customProps.router = {
+      ...customProps.router,
+      locale: undefined,
+    }
+
+    render(
+      <DummyAppConfigOverride
+        {...customProps}
+      />
+    )
+
+    const [args] = (I18nextProvider as jest.Mock).mock.calls
+    expect(args[0].i18n.language).toEqual('fr')
   })
 
   it('returns an I18nextProvider', () => {
@@ -122,6 +245,37 @@ describe('appWithTranslation', () => {
 
     expect(fs.existsSync).toHaveBeenCalledTimes(0)
     expect(fs.readdirSync).toHaveBeenCalledTimes(0)
+  })
+
+  it('should use locale from router', () => {
+    renderComponent(createProps('de'))
+    const [args] = (I18nextProvider as jest.Mock).mock.calls
+    expect(args[0].i18n.language).toEqual('de')
+  })
+
+  it('does not re-call createClient on re-renders unless locale or props have changed', () => {
+    const { rerender } = renderComponent()
+    expect(createClient).toHaveBeenCalledTimes(1)
+    rerender(
+      <DummyApp
+        {...defaultRenderProps}
+      />
+    )
+    expect(createClient).toHaveBeenCalledTimes(1)
+    const newProps = createProps()
+    rerender(
+      <DummyApp
+        {...newProps}
+      />
+    )
+    expect(createClient).toHaveBeenCalledTimes(2)
+    newProps.router.locale = 'de'
+    rerender(
+      <DummyApp
+        {...newProps}
+      />
+    )
+    expect(createClient).toHaveBeenCalledTimes(3)
   })
 
 })

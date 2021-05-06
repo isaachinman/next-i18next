@@ -6,30 +6,35 @@ import type { AppProps as NextJsAppProps } from 'next/app'
 import { createConfig } from './config/createConfig'
 import createClient from './createClient'
 
-import { SSRConfig, UserConfig } from './types'
+import { InternalConfig, SSRConfig, UserConfig } from './types'
 
 import { i18n as I18NextClient } from 'i18next'
 export { Trans, useTranslation, withTranslation } from 'react-i18next'
 
 type AppProps = NextJsAppProps & {
-  pageProps: SSRConfig
+  pageProps?: SSRConfig
 }
 
-export let globalI18n: I18NextClient | null = null
+export let globalI18n: I18NextClient
+export let globalConfig: InternalConfig
 
 export const appWithTranslation = (
   WrappedComponent: React.ComponentType<AppProps> | React.ElementType<AppProps>,
   configOverride: UserConfig | null = null,
 ) => {
   const AppWithTranslation = (props: AppProps) => {
-    let i18n: I18NextClient | null = null
-    let locale = null
+    const { _nextI18Next = {} } = props.pageProps
+    let { locale } = props.router
 
-    if (props?.pageProps?._nextI18Next) {
-      let { userConfig } = props.pageProps._nextI18Next
-      const { initialI18nStore, initialLocale } = props.pageProps._nextI18Next
+    // Memoize the instance and only re-initialize when either:
+    // 1. The route changes (non-shallowly)
+    // 2. Router locale changes
+    // 3. UserConfig override changes
+    const {config, i18n} = useMemo(() => {
+      let { userConfig } = _nextI18Next
+      const { initialLocale, initialI18nStore } = _nextI18Next
 
-      if (userConfig === null && configOverride === null) {
+      if (!userConfig && configOverride === null) {
         throw new Error('appWithTranslation was called without a next-i18next config')
       }
 
@@ -41,36 +46,39 @@ export const appWithTranslation = (
         throw new Error('appWithTranslation was called without config.i18n')
       }
 
-      locale = initialLocale;
+      if (!userConfig?.i18n?.defaultLocale) {
+        throw new Error('config.i18n does not include a defaultLocale property')
+      }
 
-      ({ i18n } = createClient({
-        ...createConfig({
-          ...userConfig,
-          lng: initialLocale,
-        }),
-        lng: initialLocale,
-        resources: initialI18nStore,
-      }))
+      if (!locale) {
+        locale = initialLocale || userConfig.i18n.defaultLocale
+      }
 
-      useMemo(() => {
-        globalI18n = i18n
-      }, [i18n])
-    }
+      const config = createConfig({
+        ...userConfig,
+        lng: locale,
+      })
 
-    return i18n !== null ? (
+      return {
+        config,
+        i18n: createClient({
+          ...config,
+          lng: locale,
+          resources: initialI18nStore,
+        }).i18n}
+    }, [_nextI18Next, locale, configOverride])
+
+    globalConfig = config
+    globalI18n = i18n
+
+    return (
       <I18nextProvider
         i18n={i18n}
       >
         <WrappedComponent
-          key={locale}
           {...props}
         />
       </I18nextProvider>
-    ) : (
-      <WrappedComponent
-        key={locale}
-        {...props}
-      />
     )
   }
 
