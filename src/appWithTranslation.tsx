@@ -46,7 +46,8 @@ export const appWithTranslation = (
         throw new Error('appWithTranslation was called without config.i18n')
       }
 
-      return createClient({
+
+      const instance = createClient({
         ...createConfig({
           ...userConfig,
           lng: locale,
@@ -54,9 +55,12 @@ export const appWithTranslation = (
         lng: locale,
         resources: initialI18nStore,
       }).i18n
+
+      globalI18n = instance
+
+      return instance
     }, [_nextI18Next, locale])
 
-    globalI18n = i18n
 
     return i18n !== null ? (
       <I18nextProvider
