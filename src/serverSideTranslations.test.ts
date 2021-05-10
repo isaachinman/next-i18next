@@ -52,7 +52,6 @@ describe('serverSideTranslations', () => {
           'en-US': {},
           'fr-CA': {},
         },
-        initialLocale: 'en-US',
         userConfig: {
           i18n: {
             defaultLocale: 'en-US',
