@@ -153,7 +153,6 @@ describe('serverSideTranslations', () => {
         initialI18nStore: {
           'en-US': {},
         },
-        initialLocale: 'en-US',
         userConfig: {
           i18n: {
             defaultLocale: 'en-US',
