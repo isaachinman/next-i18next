@@ -3,7 +3,7 @@
 ## Setup local dev environment
 
 1. Clone the repo
-2. Ensure you have a node version >=14, npm > 8
+2. Ensure you have a node version >=20, npm > 8
 
 ## Working on the code
 
